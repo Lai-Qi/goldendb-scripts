@@ -172,12 +172,13 @@ EOF
      ./test_corefile > /dev/null 2>&1
     } 2>/dev/null
     fi
-
-    if [ -f core-test_corefile* ];then
-    echo "[INFO] core file generated successfully!" && rm -f core-test_corefile*
+    core_pattern_path=$(dirname $(cat /proc/sys/kernel/core_pattern))
+    if find ${core_pattern_path}/core* -cmin -3 -print | grep -q . ; then
+        echo "[INFO] core file generated successfully!" 
     else
-    echo "[ERROR] core file generated failed"
+        echo "[ERROR] core file generated failed"
     fi
+    rm -f ${core_pattern_path}/core-test_corefile*
     rm -f test_corefile.c
     rm -f test_corefile
 }
