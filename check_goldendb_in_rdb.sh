@@ -4,13 +4,13 @@
 # Date: 20250114
 
 # ========== Modify RDB connection info here ==========
-HOST="127.0.0.1"
+HOST="localhost"
 PORT="3309"
 USER="xxxxxx"
 PASSWORD="xxxxxxx"
 DATABASE="goldendb_omm"
 CHARSET="utf8"
-# ================================================
+# =====================================================
 
 # The single output file where everything goes
 OUTPUT_FILE="$(hostname)_$(date +%F)_check_results.txt"
@@ -168,7 +168,6 @@ WHERE city_id = 1;
 #    Query device_ip/device_port from gdb_device_info
 #    then loop through each RDB instance.
 ############################################
-
 echo "============================================" >> "$OUTPUT_FILE"
 echo "5. RDB SEMI-SYNC CHECK" >> "$OUTPUT_FILE"
 echo "============================================" >> "$OUTPUT_FILE"
@@ -197,8 +196,6 @@ ORDER BY room_id;
 
 # 5.2 Loop over each device, connect, run 'SHOW VARIABLES'
 while IFS=$'\t' read -r device_ip device_port city_id room_id; do
-  
-  # Append device info
   {
     echo "----------------------------------------------"
     echo "Device IP:    $device_ip"
@@ -220,6 +217,40 @@ while IFS=$'\t' read -r device_ip device_port city_id room_id; do
 
   echo "" >> "$OUTPUT_FILE"
 done <<< "$devices"
+
+############################################
+# 6. DN状态检查
+############################################
+run_query_with_separator \
+"6. DN状态检查" \
+"
+SELECT
+  cluster_id,
+  group_id,
+  db_id,
+  team_id,
+  db_ip,
+  db_name,
+  db_port,
+  db_status AS '1 - 正常;非1 - 不正常'
+FROM mds.db_info
+WHERE db_status != 1;
+"
+
+############################################
+# 7. DN高低水位状态检查
+############################################
+run_query_with_separator \
+"7. DN高低水位状态检查" \
+"
+SELECT
+  cluster_id,
+  group_id,
+  bConsistency AS '高低水位信息：0 - 正常;1 - 低于低水位;2 - 低于高水位',
+  group_status AS 'group状态：0 - 异常;1 - 普通禁用;2 - 正常;3 - 低于低水位/只读;4 - 强制禁用;5 - 优雅禁用'
+FROM mds.group_info
+WHERE bConsistency != 0;
+"
 
 echo "===== ALL CHECKS DONE =====" >> "$OUTPUT_FILE"
 echo "Done! Please check $OUTPUT_FILE for full results."
