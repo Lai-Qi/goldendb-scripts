@@ -1,0 +1,73 @@
+1.安装
+yum install -y autoconf automake mariadb-devel libtool openssl-devel
+unzip -q sysbench-master.zip 
+cd sysbench-master
+./autogen.sh
+./configure
+make && make install
+
+#注意这里最好使用得是mysql-devel 但yum源可能没有，在验证DN切换场景得时候会发现切换完成后tps一直为0不恢复（抓包可以看到sysbench在反复建连接无法创建5sCN断链保护后断开），需要替换mariadb动态库为mysql的动态库，拷贝DN的lib目录下的libmysqlclient.so.18文件放到/usr/lib64下面，并创建软链接
+[root@SMX-KylinV10SP2 ~]# ll /usr/lib64|grep libmariadb
+lrwxrwxrwx  1 root root       15  3月  6  2021 libmariadb.so -> libmariadb.so.3
+-rwxr-xr-x  1 root root   336088  3月  6  2021 libmariadb.so.3
+lrwxrwxrwx  1 root root       15  3月  6  2021 libmysqlclient_r.so -> libmariadb.so.3
+lrwxrwxrwx  1 root root       15  3月  6  2021 libmysqlclient.so -> libmariadb.so.3
+[root@SMX-KylinV10SP2 ~]# cp ~zxdb1/lib/libmysqlclient.so.18 /usr/lib64/
+[root@SMX-KylinV10SP2 ~]# chown root:root /usr/lib64/libmysqlclient.so.18 && chmod 755 /usr/lib64/libmysqlclient.so.18 
+[root@SMX-KylinV10SP2 ~]# mv /usr/lib64/libmariadb.so.3 /usr/lib64/libmariadb.so.3.bak
+[root@SMX-KylinV10SP2 ~]# [ -f /usr/lib64/libmariadb.so ] && unlink /usr/lib64/libmariadb.so
+[root@SMX-KylinV10SP2 ~]# ln -s /usr/lib64/libmysqlclient.so.18  /usr/lib64/libmariadb.so
+[root@SMX-KylinV10SP2 ~]# ln -s /usr/lib64/libmysqlclient.so.18  /usr/lib64/libmariadb.so.3
+[root@SMX-KylinV10SP2 ~]# ll /usr/lib64|grep libmariadb
+lrwxrwxrwx  1 root root       31  3月  1 19:06 libmariadb.so -> /usr/lib64/libmysqlclient.so.18
+lrwxrwxrwx  1 root root       31  3月  1 19:06 libmariadb.so.3 -> /usr/lib64/libmysqlclient.so.18
+-rwxr-xr-x  1 root root   336088  3月  6  2021 libmariadb.so.3.bak
+lrwxrwxrwx  1 root root       15  3月  6  2021 libmysqlclient_r.so -> libmariadb.so.3
+lrwxrwxrwx  1 root root       15  3月  6  2021 libmysqlclient.so -> libmariadb.so.3
+[root@SMX-KylinV10SP2 ~]# ldd /usr/local/bin/sysbench
+	linux-vdso.so.1 (0x0000ffff57030000)
+	libmariadb.so.3 => /usr/lib64/libmariadb.so.3 (0x0000ffff56c40000)
+	libz.so.1 => /usr/lib64/libz.so.1 (0x0000ffff56c00000)
+	libpthread.so.0 => /usr/lib64/libpthread.so.0 (0x0000ffff56bc0000)
+	libssl.so.1.1 => /usr/lib64/libssl.so.1.1 (0x0000ffff56b10000)
+	libcrypto.so.1.1 => /usr/lib64/libcrypto.so.1.1 (0x0000ffff56830000)
+	libdl.so.2 => /usr/lib64/libdl.so.2 (0x0000ffff56800000)
+	libaio.so.1 => /usr/lib64/libaio.so.1 (0x0000ffff567d0000)
+	libm.so.6 => /usr/lib64/libm.so.6 (0x0000ffff56700000)
+	libgcc_s.so.1 => /usr/lib64/libgcc_s.so.1 (0x0000ffff566c0000)
+	libc.so.6 => /usr/lib64/libc.so.6 (0x0000ffff56530000)
+	libstdc++.so.6 => /usr/lib64/libstdc++.so.6 (0x0000ffff56380000)
+	/lib/ld-linux-aarch64.so.1 (0x0000ffff57040000)
+
+
+
+2.使用
+mysql -usuper -pxxxxxx -P3306 -h10.10.10.10 -e 'create database if not exists sysbench'
+
+sysbench /usr/local/share/sysbench/oltp_read_write.lua --auto-inc=off --mysql-user=super --mysql-password='xxxxxx' --mysql-host=10.10.10.10 --mysql-port=3306  --mysql-db=sysbench --tables=10 --table-size=10000 --report-interval=5 prepare
+# 如果使用的是GoldenDB多分片，需要vim /usr/local/share/sysbench/oltp_common.lua在199行添加distributed by duplicate(g1) 或者 如下修改分片4是分片数
+191 group_id=table_num % 4 + 1
+192    query = string.format([[
+193 CREATE TABLE sbtest%d(
+194   id %s,
+195   k INTEGER DEFAULT '0' NOT NULL,
+196   c CHAR(120) DEFAULT '' NOT NULL,
+197   pad CHAR(60) DEFAULT '' NOT NULL,
+198   %s (id)
+199 ) %s %s
+200 distributed by duplicate(g%s)
+201  ]],
+202       table_num, id_def, id_index_def, engine_def,
+203       sysbench.opt.create_table_options,group_id)
+
+
+sysbench /usr/local/share/sysbench/oltp_read_write.lua --auto-inc=off --mysql-user=super --mysql-password='xxxxxx' --mysql-host=10.10.10.10 --mysql-port=3306  --mysql-db=sysbench --tables=10 --table-size=10000 --report-interval=5 prewarm
+
+sysbench /usr/local/share/sysbench/oltp_read_write.lua --auto-inc=off --mysql-user=super --mysql-password='xxxxxx' --mysql-host=10.10.10.10 --mysql-port=3306  --mysql-db=sysbench --tables=10 --table-size=10000 --threads=10 --db-ps-mode=disable --mysql-ignore-errors=10812,1062,2013 --report-interval=5 --time=3600 run
+# 如过需要验证GoldenDB读写分离需要加上--skip_trx=on
+
+sysbench /usr/local/share/sysbench/oltp_read_write.lua --auto-inc=off --mysql-user=super --mysql-password='xxxxxx' --mysql-host=10.10.10.10 --mysql-port=3306  --mysql-db=sysbench --tables=10 --table-size=10000  --report-interval=5 cleanup
+
+
+
+#这里--mysql-ignore-errors=10812,1062,2013,1213 10812是解决cn prepare报错码问题，1062是解决插入duplicate key问题，2013是解决DN切换报错问题,1213是skip_trx下可能的deadlock， 也可以直接--mysql-ignore-errors=all
