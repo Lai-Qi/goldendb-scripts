@@ -1,0 +1,55 @@
+loader安装使用和报错解决方式
+
+一、安装
+unzip loader_kylinV10.zip
+
+
+二、使用
+参考《loader工具使用说明.docx》
+[zxgdbcheck@SMX-KylinV10SP2 ~]$ /data/loader  -type="out" -overwrite -db-conn-info="10.129.77.103:8881"  -sql="select * from test.test_table into outfile '/tmp/t1.csv' fields  terminated by ','  escaped by ''  lines terminated by '\n' ;" -user="xxxxxx" -password=xxxxxx
+Warning: use default value! parameter: [enable_loader_customize]
+[02-10 11:53:00:090] command to  CHECK-SYNTAX
+ Load data code:0  Load data message: SQL syntax check success
+
+[02-10 11:53:00:090] command to  CHECK-DATAFILE
+ Load data code:0  Load data message: check csv file success
+
+[02-10 11:53:02:039] command to  CSV-BATCH-DUMPER
+ Load data code:0  Load data message: CSV batch dumper finish
+dumper line:1, size:0 MB, velocity:0.0MB/s
+
+[02-10 11:53:02:039] command to  FILE-PROCESS-END
+ Load data code:0  Load data message: load dumper success
+
+file dumper info:
+        total seconds:2              rows:1              size:8B
+        host ip:                     dumper file name:/tmp/t1.csv
+
+
+please check log/loader_2608552_20250210115300890.log .
+~success~
+[zxgdbcheck@SMX-KylinV10SP2 ~]$ cat /tmp/t1.csv 
+1,hello
+
+
+三、常见问题
+Q1: 缺少lib库
+[zxgdbcheck@SMX-KylinV10SP2 ~]$ ./loader 
+./loader: error while loading shared libraries: libssl.so.1.0.0: cannot open shared object file: No such file or directory
+
+A1：
+按装openssl-libs
+方式1: yum install openssl-libs
+可能yum源里的是1.1.1版本的，这时候采用方式2编译一个
+[root@SMX-KylinV10SP2 openssl-1.0.0s]# rpm -qa|grep openssl-libs
+openssl-libs-1.1.1f-4.p22.ky10.aarch64
+方式2:
+wget https://github.com/openssl/openssl/releases/download/OpenSSL_1_0_0s/openssl-1.0.0s.tar.gz
+tar xzf openssl-1.0.0s.tar.gz
+cd openssl-1.0.0s
+./config --prefix=/opt/openssl-1.0.0 shared
+make
+sudo make install
+
+#添加环境变量 并添加到.bash_profle中
+export LD_LIBRARY_PATH=/opt/openssl-1.0.0/lib:$LD_LIBRARY_PATH
